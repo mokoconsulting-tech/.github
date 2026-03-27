@@ -10,37 +10,20 @@ We build and maintain open-source tools that help organizations enforce coding s
 
 ## What We Do
 
-- **MokoStandards** — Authoritative source of coding standards, workflow templates, and governance policies for all our repositories
+- **MokoStandards** — Authoritative source of coding standards, workflow templates, and governance policies
 - **Dolibarr Modules** — Custom CRM extensions for [Dolibarr ERP/CRM](https://www.dolibarr.org)
 - **Joomla Extensions** — Web-as-a-Service (WaaS) components for [Joomla CMS](https://www.joomla.org)
 - **Automation Tools** — PHP-based CLI tools for repository management, deployment, and compliance
 
 ## Our Standards
 
-Every repository in this organization is governed by [MokoStandards](https://github.com/mokoconsulting-tech/MokoStandards):
+Every repository is governed by [MokoStandards](https://github.com/mokoconsulting-tech/MokoStandards):
 
 - **6-tier enforcement system** for file synchronization
-- **54 standard labels** across all repositories
-- **Three-environment deploy pipeline** (dev → demo → RS) via SFTP
+- **58 standard labels** across all repositories
+- **Three-environment deploy pipeline** (dev, demo, RS) via SFTP
 - **Auto-versioning** with patch bumps on every merge to main
-- **Auto-release** with GitHub Releases and git tags
-- **Bulk sync** to push standards updates across 45+ repositories
-
-## Key Repositories
-
-| Repository | Description |
-|------------|-------------|
-| [MokoStandards](https://github.com/mokoconsulting-tech/MokoStandards) | Standards, policies, and automation — the source of truth |
-| [MokoCRM](https://github.com/mokoconsulting-tech/MokoCRM) | Dolibarr CRM module |
-| [MokoCassiopeia](https://github.com/mokoconsulting-tech/MokoCassiopeia) | Joomla Cassiopeia template customization |
-| [MokoJoomTOS](https://github.com/mokoconsulting-tech/MokoJoomTOS) | Joomla Terms of Service module |
-
-## Tech Stack
-
-- **PHP 8.1+** — All automation, validation, and deployment tools
-- **GitHub Actions** — CI/CD, compliance checks, automated releases
-- **SFTP via phpseclib3** — Secure deployment to dev/demo/RS servers
-- **Terraform-style definitions** — Repository structure as code
+- **Bulk sync** to push standards across 45+ repositories
 
 ## Contact
 
