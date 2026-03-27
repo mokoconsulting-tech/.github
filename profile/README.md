@@ -18,9 +18,10 @@ Revision History:
 - 2026-01-04: Added MokoStandards compliant header with copyright, file info, and metadata
 - 2024: Initial creation
 -->
+<div align="center">
 [![Banner](https://mokoconsulting.tech/images/branding/logo.png)](https://mokoconsulting.tech/)
 
-<div align="center">
+
 
 **Enterprise-Grade Open-Source Solutions**
 
