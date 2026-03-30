@@ -1,0 +1,39 @@
+# Copyright (C) 2026 Moko Consulting <hello@mokoconsulting.tech>
+# SPDX-License-Identifier: GPL-3.0-or-later
+# FILE INFORMATION
+# DEFGROUP: GitHub.Workflow
+# INGROUP: MokoStandards.CI
+# REPO: https://github.com/mokoconsulting-tech/MokoStandards
+# PATH: /.github/workflows/ci.yml
+# VERSION: 04.03.00
+# BRIEF: Continuous integration workflow using local reusable workflow
+# NOTE: Delegates CI execution to local reusable-ci-validation.yml for repository validation
+
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+      - main
+      - dev/**
+      - rc/**
+      - version/**
+  pull_request:
+    branches:
+      - main
+      - dev/**
+      - rc/**
+      - version/**
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  ci:
+    name: Repository Validation Pipeline
+    uses: ./.github/workflows/reusable-ci-validation.yml
+    with:
+      profile: full
+    secrets: inherit
