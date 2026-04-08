@@ -21,8 +21,8 @@
 # DEFGROUP: GitHub.Workflow
 # INGROUP: MokoStandards.Deploy
 # REPO: https://github.com/mokoconsulting-tech/MokoStandards
-# PATH: /templates/workflows/shared/deploy-dev.yml
-# VERSION: 04.03.00
+# PATH: /templates/workflows/shared/deploy-dev.yml.template
+# VERSION: 04.05.13
 # BRIEF: SFTP deployment workflow for development server — synced to all governed repos
 # NOTE: Synced via bulk-repo-sync to .github/workflows/deploy-dev.yml in all governed repos.
 #       Port is resolved in order: DEV_FTP_PORT variable → :port suffix in DEV_FTP_HOST → 22.
@@ -37,10 +37,9 @@ name: Deploy to Dev Server (SFTP)
 # Optional org-level variable:   DEV_FTP_PORT (auto-detected from host or defaults to 22)
 # Optional org/repo variable:    DEV_FTP_SUFFIX — when set, appended to DEV_FTP_PATH to form the
 #                                 full remote destination: DEV_FTP_PATH/DEV_FTP_SUFFIX
-# Ignore rules:                  Place a .ftp_ignore file in the repository root. Each non-empty,
-#                                 non-comment line is a regex pattern tested against the relative path
-#                                 of each file (e.g. "subdir/file.txt"). The .gitignore is also
-#                                 respected automatically.
+# Ignore rules:                  Place a .ftpignore file in the repository root. Each non-empty,
+#                                 non-comment line is a glob pattern tested against the relative path
+#                                 of each file (e.g. "subdir/file.txt"). The .gitignore is NOT used.
 # Required org-level secret:     DEV_FTP_KEY (preferred) or DEV_FTP_PASSWORD
 #
 # Access control: only users with admin or maintain role on the repository may deploy.
@@ -54,6 +53,7 @@ on:
       - development
     paths:
       - 'src/**'
+      - 'htdocs/**'
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
@@ -63,6 +63,7 @@ on:
       - development
     paths:
       - 'src/**'
+      - 'htdocs/**'
   workflow_dispatch:
     inputs:
       clear_remote:
@@ -178,24 +179,28 @@ jobs:
       - name: Resolve source directory
         id: source
         run: |
-          SRC="src"
-          if [ ! -d "$SRC" ]; then
-            echo "⚠️ No src/ directory found — skipping deployment"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          # Resolve source directory: src/ preferred, htdocs/ as fallback
+          if [ -d "src" ]; then
+            SRC="src"
+          elif [ -d "htdocs" ]; then
+            SRC="htdocs"
           else
-            COUNT=$(find "$SRC" -maxdepth 0 -type d > /dev/null && find "$SRC" -type f | wc -l)
-            echo "✅ Source: src/ (${COUNT} file(s))"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "dir=${SRC}"  >> "$GITHUB_OUTPUT"
+            echo "⚠️ No src/ or htdocs/ directory found — skipping deployment"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          COUNT=$(find "$SRC" -type f | wc -l)
+          echo "✅ Source: ${SRC}/ (${COUNT} file(s))"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "dir=${SRC}"  >> "$GITHUB_OUTPUT"
 
       - name: Preview files to deploy
         if: steps.source.outputs.skip == 'false'
         env:
           SOURCE_DIR: ${{ steps.source.outputs.dir }}
         run: |
-          # ── Convert a gitignore-style glob line to an ERE pattern ──────────────
-          ftp_ignore_to_regex() {
+          # ── Convert a ftpignore-style glob line to an ERE pattern ──────────────
+          ftpignore_to_regex() {
             local line="$1"
             local anchored=false
             # Strip inline comments and whitespace
@@ -225,15 +230,15 @@ jobs:
             fi
           }
 
-          # ── Read .ftp_ignore (gitignore-style globs) ─────────────────────────
+          # ── Read .ftpignore (ftpignore-style globs) ─────────────────────────
           IGNORE_PATTERNS=()
           IGNORE_SOURCES=()
-          if [ -f ".ftp_ignore" ]; then
+          if [ -f ".ftpignore" ]; then
             while IFS= read -r line; do
               [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
-              regex=$(ftp_ignore_to_regex "$line")
+              regex=$(ftpignore_to_regex "$line")
               [ -n "$regex" ] && IGNORE_PATTERNS+=("$regex") && IGNORE_SOURCES+=("$line")
-            done < ".ftp_ignore"
+            done < ".ftpignore"
           fi
 
           # ── Walk src/ and classify every file ────────────────────────────────
@@ -244,17 +249,11 @@ jobs:
             SKIP=false
             for i in "${!IGNORE_PATTERNS[@]}"; do
               if echo "$rel" | grep -qE "${IGNORE_PATTERNS[$i]}" 2>/dev/null; then
-                IGNORED_FILES+=("$rel | .ftp_ignore \`${IGNORE_SOURCES[$i]}\`")
+                IGNORED_FILES+=("$rel | .ftpignore \`${IGNORE_SOURCES[$i]}\`")
                 SKIP=true; break
               fi
             done
             $SKIP && continue
-            if [ -f ".gitignore" ]; then
-              git check-ignore -q "$rel" 2>/dev/null && {
-                IGNORED_FILES+=("$rel | .gitignore")
-                continue
-              } || true
-            fi
             WILL_UPLOAD+=("$rel")
           done < <(find "$SOURCE_DIR" -type f -print0 | sort -z)
 
@@ -425,7 +424,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GH_TOKEN || github.token }}"}}'
         run: |
-          git clone --depth 1 --branch version/04.03.00 --quiet \
+          git clone --depth 1 --branch version/04.05 --quiet \
             "https://x-access-token:${GH_TOKEN}@github.com/mokoconsulting-tech/MokoStandards.git" \
             /tmp/mokostandards
           cd /tmp/mokostandards
@@ -576,6 +575,10 @@ jobs:
               > /tmp/sftp-config.json
           fi
 
+          # Dev deploys skip minified files — use unminified sources for debugging
+          echo "*.min.js" >> .ftpignore
+          echo "*.min.css" >> .ftpignore
+
           # ── Run deploy-sftp.php from MokoStandards ────────────────────────────
           DEPLOY_ARGS=(--path . --src-dir "$SOURCE_DIR" --config /tmp/sftp-config.json)
           if [ "$USE_PASSPHRASE" = "true" ]; then
@@ -610,7 +613,9 @@ jobs:
               EXT_ELEMENT=$(grep -oP '<element>\K[^<]+' "$MANIFEST" 2>/dev/null | head -1 || basename "$MANIFEST" .xml)
               EXT_CLIENT=$(grep -oP '<extension[^>]+client="\K[^"]+' "$MANIFEST" 2>/dev/null || echo "")
               EXT_FOLDER=$(grep -oP '<extension[^>]+group="\K[^"]+' "$MANIFEST" 2>/dev/null || echo "")
-              TARGET_PLATFORM=$(grep -oP '<targetplatform[^/]*/>' "$MANIFEST" 2>/dev/null | head -1 || echo '<targetplatform name="joomla" version="((4\.[3-9])|(5\.[0-9]))" />')
+              TARGET_PLATFORM=$(grep -oP '<targetplatform[^/]*/' "$MANIFEST" 2>/dev/null | head -1 || true)
+              [ -n "$TARGET_PLATFORM" ] && TARGET_PLATFORM="${TARGET_PLATFORM}>"
+              [ -z "$TARGET_PLATFORM" ] && TARGET_PLATFORM=$(printf '<targetplatform name="joomla" version="5.*" %s>' "/")
 
               CLIENT_TAG=""
               if [ -n "$EXT_CLIENT" ]; then
@@ -626,111 +631,48 @@ jobs:
 
               DOWNLOAD_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.zip"
 
-              cat > update.xml << 'DEVXML'
-<?xml version="1.0" encoding="utf-8"?>
-<updates>
-	<update>
-		<name>EXT_NAME_PH</name>
-		<description>EXT_NAME_PH STABILITY_PH build</description>
-		<element>EXT_ELEMENT_PH</element>
-		<type>EXT_TYPE_PH</type>
-		<version>VERSION_LABEL_PH</version>
-		CLIENT_TAG_PH
-		FOLDER_TAG_PH
-		<tags>
-			<tag>STABILITY_PH</tag>
-		</tags>
-		<infourl title="EXT_NAME_PH">https://github.com/REPO_PH/tree/BRANCH_PH</infourl>
-		<downloads>
-			<downloadurl type="full" format="zip">DOWNLOAD_URL_PH</downloadurl>
-		</downloads>
-		TARGET_PLATFORM_PH
-		<maintainer>Moko Consulting</maintainer>
-		<maintainerurl>https://mokoconsulting.tech</maintainerurl>
-	</update>
-</updates>
-DEVXML
-              sed -i "s|EXT_NAME_PH|${EXT_NAME}|g" update.xml
-              sed -i "s|EXT_ELEMENT_PH|${EXT_ELEMENT}|g" update.xml
-              sed -i "s|EXT_TYPE_PH|${EXT_TYPE}|g" update.xml
-              sed -i "s|CLIENT_TAG_PH|${CLIENT_TAG}|g" update.xml
-              sed -i "s|FOLDER_TAG_PH|${FOLDER_TAG}|g" update.xml
-              sed -i "s|REPO_PH|${REPO}|g" update.xml
-              sed -i "s|BRANCH_PH|${BRANCH}|g" update.xml
-              sed -i "s|DOWNLOAD_URL_PH|${DOWNLOAD_URL}|g" update.xml
-              sed -i "s|TARGET_PLATFORM_PH|${TARGET_PLATFORM}|g" update.xml
-              sed -i "s|VERSION_LABEL_PH|${VERSION_LABEL}|g" update.xml
-              sed -i "s|STABILITY_PH|${STABILITY}|g" update.xml
-              sed -i '/^[[:space:]]*$/d' update.xml
+              {
+                printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+                printf '%s\n' '<updates>'
+                printf '%s\n' '  <update>'
+                printf '%s\n' "    <name>${EXT_NAME}</name>"
+                printf '%s\n' "    <description>${EXT_NAME} ${STABILITY} build</description>"
+                printf '%s\n' "    <element>${EXT_ELEMENT}</element>"
+                printf '%s\n' "    <type>${EXT_TYPE}</type>"
+                printf '%s\n' "    <version>${VERSION_LABEL}</version>"
+                [ -n "$CLIENT_TAG" ] && printf '%s\n' "    ${CLIENT_TAG}"
+                [ -n "$FOLDER_TAG" ] && printf '%s\n' "    ${FOLDER_TAG}"
+                printf '%s\n' '    <tags>'
+                printf '%s\n' "      <tag>${STABILITY}</tag>"
+                printf '%s\n' '    </tags>'
+                printf '%s\n' "    <infourl title=\"${EXT_NAME}\">https://github.com/${REPO}/tree/${BRANCH}</infourl>"
+                printf '%s\n' '    <downloads>'
+                printf '%s\n' "      <downloadurl type=\"full\" format=\"zip\">${DOWNLOAD_URL}</downloadurl>"
+                printf '%s\n' '    </downloads>'
+                printf '%s\n' "    ${TARGET_PLATFORM}"
+                printf '%s\n' '    <maintainer>Moko Consulting</maintainer>'
+                printf '%s\n' '    <maintainerurl>https://mokoconsulting.tech</maintainerurl>'
+                printf '%s\n' '  </update>'
+                printf '%s\n' '</updates>'
+              } > updates.xml
+              sed -i '/^[[:space:]]*$/d' updates.xml
             fi
           fi
 
-          php /tmp/mokostandards/api/deploy/deploy-sftp.php "${DEPLOY_ARGS[@]}"
-          # (deploy-sftp.php handles dotfile skipping and .ftp_ignore natively)
+          # Use Joomla-aware deploy for waas-component (routes files to correct Joomla dirs)
+          # Use standard SFTP deploy for everything else
+          PLATFORM=$(php /tmp/mokostandards/api/cli/platform_detect.php --path . 2>/dev/null || true)
+          if [ "$PLATFORM" = "waas-component" ] && [ -f "/tmp/mokostandards/api/deploy/deploy-joomla.php" ]; then
+            php /tmp/mokostandards/api/deploy/deploy-joomla.php "${DEPLOY_ARGS[@]}"
+          else
+            php /tmp/mokostandards/api/deploy/deploy-sftp.php "${DEPLOY_ARGS[@]}"
+          fi
+          # (both scripts handle dotfile skipping and .ftpignore natively)
           # Remove temp files that should never be left behind
           rm -f /tmp/deploy_key /tmp/sftp-config.json
 
-      - name: Create or update failure issue
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
-        run: |
-          REPO="${{ github.repository }}"
-          RUN_URL="${{ github.server_url }}/${REPO}/actions/runs/${{ github.run_id }}"
-          ACTOR="${{ github.actor }}"
-          BRANCH="${{ github.ref_name }}"
-          EVENT="${{ github.event_name }}"
-          NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          LABEL="deploy-failure"
-
-          TITLE="fix: Dev deployment failed — ${REPO}"
-          BODY="## Dev Deployment Failed
-
-          A deployment to the dev server failed and requires attention.
-
-          | Field | Value |
-          |-------|-------|
-          | **Repository** | \`${REPO}\` |
-          | **Branch** | \`${BRANCH}\` |
-          | **Trigger** | ${EVENT} |
-          | **Actor** | @${ACTOR} |
-          | **Failed at** | ${NOW} |
-          | **Run** | [View workflow run](${RUN_URL}) |
-
-          ### Next steps
-          1. Review the [workflow run log](${RUN_URL}) for the specific error.
-          2. Fix the underlying issue (credentials, SFTP connectivity, permissions).
-          3. Re-trigger the deployment via **Actions → Deploy to Dev Server → Run workflow**.
-
-          ---
-          *Auto-created by deploy-dev.yml — close this issue once the deployment is resolved.*"
-
-          # Ensure the label exists (idempotent — no-op if already present)
-          gh label create "$LABEL" \
-            --repo "$REPO" \
-            --color "CC0000" \
-            --description "Automated deploy failure tracking" \
-            --force 2>/dev/null || true
-
-          # Look for an existing open deploy-failure issue
-          EXISTING=$(gh api "repos/${REPO}/issues?labels=${LABEL}&state=all&per_page=1&sort=created&direction=desc" \
-            --jq '.[0].number' 2>/dev/null)
-
-          if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
-            gh api "repos/${REPO}/issues/${EXISTING}" \
-              -X PATCH \
-              -f title="$TITLE" \
-              -f body="$BODY" \n              -f state="open" \
-              --silent
-            echo "📋 Failure issue #${EXISTING} updated/reopened: ${REPO}" >> "$GITHUB_STEP_SUMMARY"
-          else
-            gh issue create \
-              --repo "$REPO" \
-              --title "$TITLE" \
-              --body "$BODY" \
-              --label "$LABEL" \n              --assignee "jmiller-moko" \
-              | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
+      # Dev deploys fail silently — no issue creation.
+      # Demo and RS deploys create failure issues (production-facing).
 
       - name: Deployment summary
         if: always()
