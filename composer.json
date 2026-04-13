@@ -1,0 +1,24 @@
+{
+    "name": "mokoconsulting/org-profile",
+    "description": "Organization profile README",
+    "type": "metapackage",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Moko Consulting",
+            "email": "hello@mokoconsulting.tech"
+        }
+    ],
+    "require": {
+        "mokoconsulting-tech/enterprise": "^04.05"
+    },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://git.mokoconsulting.tech/api/packages/MokoConsulting/composer"
+        }
+    ],
+    "config": {
+        "sort-packages": true
+    }
+}
