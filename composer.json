@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "mokoconsulting-tech/enterprise": "^04.05"
+        "mokoconsulting-tech/enterprise": "dev-version/04"
     },
     "repositories": [
         {
